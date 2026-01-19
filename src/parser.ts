@@ -1,6 +1,7 @@
 import type { CalendarEvent, ParsedEvent } from "./types";
 
-const TIME_PATTERN = /^- (\d{1,2}:\d{2}) - (\d{1,2}:\d{2}) (.+?) \[(.+?)\]$/;
+const TIME_PATTERN_WITH_CALENDAR = /^- (\d{1,2}:\d{2}) - (\d{1,2}:\d{2}) (.+?) \[(.+?)\]$/;
+const TIME_PATTERN_WITHOUT_CALENDAR = /^- (\d{1,2}:\d{2}) - (\d{1,2}:\d{2}) (.+)$/;
 const DESCRIPTION_PATTERN = /^\t- (.+)$/;
 
 export function formatTime(date: Date): string {
@@ -47,11 +48,22 @@ export function formatEventsToMarkdown(events: CalendarEvent[], includeDescripti
   return lines.join("\n");
 }
 
-export function parseEventLine(line: string, nextLines: string[]): ParsedEvent | null {
-  const match = line.match(TIME_PATTERN);
-  if (!match) return null;
+export function parseEventLine(line: string, nextLines: string[], defaultCalendarName?: string): ParsedEvent | null {
+  let match = line.match(TIME_PATTERN_WITH_CALENDAR);
+  let calendarName: string;
+  let title: string;
+  let startTime: string;
+  let endTime: string;
 
-  const [, startTime, endTime, title, calendarName] = match;
+  if (match) {
+    [, startTime, endTime, title, calendarName] = match;
+  } else {
+    match = line.match(TIME_PATTERN_WITHOUT_CALENDAR);
+    if (!match) return null;
+    [, startTime, endTime, title] = match;
+    calendarName = defaultCalendarName || "계획";
+  }
+
   const description: string[] = [];
 
   for (const nextLine of nextLines) {
@@ -73,7 +85,7 @@ export function parseEventLine(line: string, nextLines: string[]): ParsedEvent |
   };
 }
 
-export function parseSection(content: string, sectionHeader: string): ParsedEvent[] {
+export function parseSection(content: string, sectionHeader: string, defaultCalendarName?: string): ParsedEvent[] {
   const lines = content.split("\n");
   const events: ParsedEvent[] = [];
 
@@ -101,7 +113,7 @@ export function parseSection(content: string, sectionHeader: string): ParsedEven
         }
       }
 
-      const event = parseEventLine(line, descriptionLines);
+      const event = parseEventLine(line, descriptionLines, defaultCalendarName);
       if (event) {
         events.push(event);
         i += 1 + (event.description?.length || 0);
@@ -116,7 +128,7 @@ export function parseSection(content: string, sectionHeader: string): ParsedEven
 }
 
 export function parseDailyPlan(content: string): ParsedEvent[] {
-  return parseSection(content, "Daily Plan");
+  return parseSection(content, "Daily Plan", "계획");
 }
 
 export function parseDailyLog(content: string): ParsedEvent[] {
