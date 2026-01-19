@@ -148,12 +148,60 @@ export function updateSection(
   let sectionFound = false;
   let contentInserted = false;
 
+  const existingTodos = new Map<string, string[]>();
+  let currentEventKey: string | null = null;
+  let currentTodos: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (!inSection && line.startsWith("## ") && line.includes(sectionHeader)) {
+      inSection = true;
+      continue;
+    }
+    if (inSection) {
+      if (line.startsWith("## ")) {
+        if (currentEventKey && currentTodos.length > 0) {
+          existingTodos.set(currentEventKey, [...currentTodos]);
+        }
+        break;
+      }
+      const eventMatch = line.match(TIME_PATTERN_WITHOUT_CALENDAR) || line.match(TIME_PATTERN_WITH_CALENDAR);
+      if (eventMatch) {
+        if (currentEventKey && currentTodos.length > 0) {
+          existingTodos.set(currentEventKey, [...currentTodos]);
+        }
+        currentEventKey = `${eventMatch[1]}-${eventMatch[2]}`;
+        currentTodos = [];
+        continue;
+      }
+      if (line.match(TODO_PATTERN)) {
+        currentTodos.push(line);
+        continue;
+      }
+    }
+  }
+  if (currentEventKey && currentTodos.length > 0) {
+    existingTodos.set(currentEventKey, [...currentTodos]);
+  }
+
+  inSection = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     if (line.startsWith("## ")) {
       if (inSection && !contentInserted) {
-        result.push(newContent);
+        const newLines = newContent.split("\n");
+        for (const newLine of newLines) {
+          result.push(newLine);
+          const eventMatch = newLine.match(TIME_PATTERN_WITHOUT_CALENDAR) || newLine.match(TIME_PATTERN_WITH_CALENDAR);
+          if (eventMatch) {
+            const key = `${eventMatch[1]}-${eventMatch[2]}`;
+            const todos = existingTodos.get(key);
+            if (todos) {
+              result.push(...todos);
+            }
+          }
+        }
         result.push("");
         contentInserted = true;
       }
@@ -169,14 +217,22 @@ export function updateSection(
     }
 
     if (inSection) {
-      if (line.startsWith("- ") || line.match(DESCRIPTION_PATTERN)) {
-        continue;
-      }
-      if (line.trim() === "") {
+      if (line.startsWith("- ") || line.match(DESCRIPTION_PATTERN) || line.match(TODO_PATTERN) || line.trim() === "") {
         continue;
       }
       if (!contentInserted) {
-        result.push(newContent);
+        const newLines = newContent.split("\n");
+        for (const newLine of newLines) {
+          result.push(newLine);
+          const eventMatch = newLine.match(TIME_PATTERN_WITHOUT_CALENDAR) || newLine.match(TIME_PATTERN_WITH_CALENDAR);
+          if (eventMatch) {
+            const key = `${eventMatch[1]}-${eventMatch[2]}`;
+            const todos = existingTodos.get(key);
+            if (todos) {
+              result.push(...todos);
+            }
+          }
+        }
         result.push("");
         contentInserted = true;
       }
@@ -187,7 +243,18 @@ export function updateSection(
   }
 
   if (inSection && !contentInserted) {
-    result.push(newContent);
+    const newLines = newContent.split("\n");
+    for (const newLine of newLines) {
+      result.push(newLine);
+      const eventMatch = newLine.match(TIME_PATTERN_WITHOUT_CALENDAR) || newLine.match(TIME_PATTERN_WITH_CALENDAR);
+      if (eventMatch) {
+        const key = `${eventMatch[1]}-${eventMatch[2]}`;
+        const todos = existingTodos.get(key);
+        if (todos) {
+          result.push(...todos);
+        }
+      }
+    }
   }
 
   if (!sectionFound) {

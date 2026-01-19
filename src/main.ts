@@ -108,13 +108,13 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
 
       await this.app.vault.modify(file, content);
 
-      let tasksResult = { updated: 0, added: 0 };
+      let tasksResult = { updated: 0 };
       if (this.settings.todoistApiKey) {
         tasksResult = await this.syncTodoistToNote(file, date);
       }
 
       new Notice(
-        `Synced ${planEvents.length} plan events, ${logEvents.length} log events, ${tasksResult.updated} tasks updated, ${tasksResult.added} tasks added`
+        `Synced ${planEvents.length} plan events, ${logEvents.length} log events, ${tasksResult.updated} tasks updated`
       );
     } catch (error) {
       console.error("Failed to pull from calendar:", error);
@@ -325,10 +325,14 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
   private async syncTodoistToNote(
     file: TFile,
     date: Date
-  ): Promise<{ updated: number; added: number }> {
+  ): Promise<{ updated: number }> {
     let content = await this.app.vault.read(file);
     const eventsWithTodos = parseDailyPlanWithTodos(content);
     const allTodos = eventsWithTodos.flatMap((ewt) => ewt.todos);
+
+    if (allTodos.length === 0) {
+      return { updated: 0 };
+    }
 
     const remoteTasks = await this.todoistService.getTasksForDate(date);
 
@@ -341,53 +345,11 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       }
     }
 
-    const existingTitles = new Set(allTodos.map((t) => t.title));
-    const newTasks = remoteTasks.filter((t) => !existingTitles.has(t.content));
-
-    if (newTasks.length > 0) {
-      const unassignedLines = newTasks.map((task) => {
-        const checkbox = task.isCompleted ? "[x]" : "[ ]";
-        return `\t- ${checkbox} ${task.content}`;
-      });
-
-      const unassignedSection = `- Unassigned Tasks\n${unassignedLines.join("\n")}`;
-      content = this.appendToDailyPlan(content, unassignedSection);
-    }
-
-    if (updated > 0 || newTasks.length > 0) {
+    if (updated > 0) {
       await this.app.vault.modify(file, content);
     }
 
-    return { updated, added: newTasks.length };
-  }
-
-  private appendToDailyPlan(content: string, newContent: string): string {
-    const lines = content.split("\n");
-    const result: string[] = [];
-
-    let inDailyPlan = false;
-    let inserted = false;
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
-      if (line.startsWith("## ")) {
-        if (inDailyPlan && !inserted) {
-          result.push(newContent);
-          result.push("");
-          inserted = true;
-        }
-        inDailyPlan = line.includes("Daily Plan");
-      }
-
-      result.push(line);
-    }
-
-    if (inDailyPlan && !inserted) {
-      result.push(newContent);
-    }
-
-    return result.join("\n");
+    return { updated };
   }
 
   private async syncTodosToTodoist(
