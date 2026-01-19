@@ -112,18 +112,23 @@ export class GoogleTasksService {
   async createTask(
     title: string,
     due: Date,
+    startTime?: string,
     notes?: string
   ): Promise<string> {
     if (!this.tasks || !this.taskListId) {
       await this.initialize();
     }
 
+    const taskNotes = startTime 
+      ? (notes ? `[${startTime}]\n${notes}` : `[${startTime}]`)
+      : notes;
+
     const response = await this.tasks!.tasks.insert({
       tasklist: this.taskListId!,
       requestBody: {
         title,
         due: due.toISOString(),
-        notes,
+        notes: taskNotes,
       },
     });
 
@@ -135,11 +140,16 @@ export class GoogleTasksService {
     title: string,
     completed: boolean,
     due?: Date,
+    startTime?: string,
     notes?: string
   ): Promise<void> {
     if (!this.tasks || !this.taskListId) {
       await this.initialize();
     }
+
+    const taskNotes = startTime 
+      ? (notes ? `[${startTime}]\n${notes}` : `[${startTime}]`)
+      : notes;
 
     await this.tasks!.tasks.update({
       tasklist: this.taskListId!,
@@ -148,7 +158,7 @@ export class GoogleTasksService {
         title,
         status: completed ? "completed" : "needsAction",
         due: due?.toISOString(),
-        notes,
+        notes: taskNotes,
       },
     });
   }

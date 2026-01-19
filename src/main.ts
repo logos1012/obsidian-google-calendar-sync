@@ -109,10 +109,10 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
 
       await this.app.vault.modify(file, content);
 
-      const tasksUpdated = await this.syncTaskCompletionToNote(file, date);
+      const tasksResult = await this.syncTaskCompletionToNote(file, date);
 
       new Notice(
-        `Synced ${planEvents.length} plan events, ${logEvents.length} log events, ${tasksUpdated} task statuses`
+        `Synced ${planEvents.length} plan events, ${logEvents.length} log events, ${tasksResult.updated} tasks updated, ${tasksResult.added} tasks added`
       );
     } catch (error) {
       console.error("Failed to pull from calendar:", error);
@@ -320,14 +320,10 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
   private async syncTaskCompletionToNote(
     file: TFile,
     date: Date
-  ): Promise<number> {
+  ): Promise<{ updated: number; added: number }> {
     let content = await this.app.vault.read(file);
     const eventsWithTodos = parseDailyPlanWithTodos(content);
     const allTodos = eventsWithTodos.flatMap((ewt) => ewt.todos);
-
-    if (allTodos.length === 0) {
-      return 0;
-    }
 
     await this.tasksService.initialize();
     const remoteTasks = await this.tasksService.getTasksForDate(date);
@@ -341,11 +337,53 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       }
     }
 
-    if (updated > 0) {
+    const existingTitles = new Set(allTodos.map((t) => t.title));
+    const newTasks = remoteTasks.filter((t) => !existingTitles.has(t.title));
+
+    if (newTasks.length > 0) {
+      const unassignedLines = newTasks.map((task) => {
+        const checkbox = task.completed ? "[x]" : "[ ]";
+        return `\t- ${checkbox} ${task.title}`;
+      });
+
+      const unassignedSection = `- Unassigned Tasks\n${unassignedLines.join("\n")}`;
+      content = this.appendToDailyPlan(content, unassignedSection);
+    }
+
+    if (updated > 0 || newTasks.length > 0) {
       await this.app.vault.modify(file, content);
     }
 
-    return updated;
+    return { updated, added: newTasks.length };
+  }
+
+  private appendToDailyPlan(content: string, newContent: string): string {
+    const lines = content.split("\n");
+    const result: string[] = [];
+
+    let inDailyPlan = false;
+    let inserted = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      if (line.startsWith("## ")) {
+        if (inDailyPlan && !inserted) {
+          result.push(newContent);
+          result.push("");
+          inserted = true;
+        }
+        inDailyPlan = line.includes("Daily Plan");
+      }
+
+      result.push(line);
+    }
+
+    if (inDailyPlan && !inserted) {
+      result.push(newContent);
+    }
+
+    return result.join("\n");
   }
 
   private async syncTodosToTasks(
@@ -357,6 +395,7 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       ewt.todos.map((todo) => ({
         ...todo,
         dueDate: parseTimeToDate(dateStr, ewt.event.endTime),
+        startTime: ewt.event.startTime,
       }))
     );
 
@@ -380,16 +419,17 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
             existingTask.id,
             todo.title,
             todo.completed,
-            todo.dueDate
+            todo.dueDate,
+            todo.startTime
           );
           updated++;
         }
       } else {
-        await this.tasksService.createTask(todo.title, todo.dueDate);
+        await this.tasksService.createTask(todo.title, todo.dueDate, todo.startTime);
         if (todo.completed) {
           const newTask = await this.tasksService.findTaskByTitle(todo.title, date);
           if (newTask) {
-            await this.tasksService.updateTask(newTask.id, todo.title, true, todo.dueDate);
+            await this.tasksService.updateTask(newTask.id, todo.title, true, todo.dueDate, todo.startTime);
           }
         }
         created++;
