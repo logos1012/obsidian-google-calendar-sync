@@ -29,7 +29,15 @@ export class TodoistService {
       throw new Error(`Todoist API error: ${response.status}`);
     }
 
-    return response.json;
+    if (response.status === 204 || !response.text) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(response.text);
+    } catch {
+      return null;
+    }
   }
 
   async getTasksForDate(date: Date): Promise<TodoistTask[]> {
