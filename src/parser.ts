@@ -1,8 +1,9 @@
-import type { CalendarEvent, ParsedEvent } from "./types";
+import type { CalendarEvent, ParsedEvent, ParsedTodo } from "./types";
 
 const TIME_PATTERN_WITH_CALENDAR = /^- (\d{1,2}:\d{2}) - (\d{1,2}:\d{2}) (.+?) \[(.+?)\]$/;
 const TIME_PATTERN_WITHOUT_CALENDAR = /^- (\d{1,2}:\d{2}) - (\d{1,2}:\d{2}) (.+)$/;
 const DESCRIPTION_PATTERN = /^\t- (.+)$/;
+const TODO_PATTERN = /^\t- \[([ x])\] (.+)$/;
 
 export function formatTime(date: Date): string {
   return date.toLocaleTimeString("ko-KR", {
@@ -213,4 +214,90 @@ export function compareEventsByTime(a: ParsedEvent, b: ParsedEvent): number {
   const aTime = a.startTime.split(":").map(Number);
   const bTime = b.startTime.split(":").map(Number);
   return aTime[0] * 60 + aTime[1] - (bTime[0] * 60 + bTime[1]);
+}
+
+export interface EventWithTodos {
+  event: ParsedEvent;
+  todos: ParsedTodo[];
+}
+
+export function parseDailyPlanWithTodos(content: string): EventWithTodos[] {
+  const lines = content.split("\n");
+  const results: EventWithTodos[] = [];
+
+  let inSection = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.startsWith("## ")) {
+      inSection = line.includes("Daily Plan");
+      i++;
+      continue;
+    }
+
+    if (inSection && line.startsWith("- ")) {
+      const match = line.match(TIME_PATTERN_WITHOUT_CALENDAR) || line.match(TIME_PATTERN_WITH_CALENDAR);
+      if (match) {
+        const [, startTime, endTime, title] = match;
+        const event: ParsedEvent = {
+          startTime,
+          endTime,
+          title: title.replace(/\s*\[.+?\]$/, ""),
+          calendarName: "계획",
+          rawLine: line,
+        };
+
+        const todos: ParsedTodo[] = [];
+        let j = i + 1;
+
+        while (j < lines.length) {
+          const subLine = lines[j];
+          const todoMatch = subLine.match(TODO_PATTERN);
+          if (todoMatch) {
+            todos.push({
+              title: todoMatch[2],
+              completed: todoMatch[1] === "x",
+              parentEventTime: `${startTime} - ${endTime}`,
+            });
+            j++;
+          } else if (subLine.match(DESCRIPTION_PATTERN)) {
+            j++;
+          } else {
+            break;
+          }
+        }
+
+        results.push({ event, todos });
+        i = j;
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  return results;
+}
+
+export function updateTodoInContent(
+  content: string,
+  todoTitle: string,
+  completed: boolean
+): string {
+  const lines = content.split("\n");
+  const result: string[] = [];
+
+  for (const line of lines) {
+    const todoMatch = line.match(TODO_PATTERN);
+    if (todoMatch && todoMatch[2] === todoTitle) {
+      const newStatus = completed ? "x" : " ";
+      result.push(`\t- [${newStatus}] ${todoTitle}`);
+    } else {
+      result.push(line);
+    }
+  }
+
+  return result.join("\n");
 }

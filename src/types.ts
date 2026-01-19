@@ -65,3 +65,19 @@ export interface SyncResult {
   message: string;
   eventsProcessed: number;
 }
+
+// Task item from Google Tasks API
+export interface TaskItem {
+  id: string;
+  title: string;
+  completed: boolean;
+  due?: Date;
+  notes?: string;
+}
+
+// Parsed todo from Obsidian note
+export interface ParsedTodo {
+  title: string;
+  completed: boolean;
+  parentEventTime?: string; // "10:00 - 12:00" - 상위 이벤트의 시간
+}
