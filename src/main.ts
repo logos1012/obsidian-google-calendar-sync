@@ -145,6 +145,7 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
 
       let created = 0;
       let updated = 0;
+      let deleted = 0;
 
       const planResult = await this.syncEventsToCalendar(
         notePlanEvents,
@@ -154,6 +155,7 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       );
       created += planResult.created;
       updated += planResult.updated;
+      deleted += planResult.deleted;
 
       for (const noteEvent of noteLogEvents) {
         const calendarId = this.calendarService.getCalendarIdByName(
@@ -179,7 +181,20 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
         }
       }
 
-      new Notice(`Pushed to calendar: ${created} created, ${updated} updated`);
+      for (const calendarEvent of calendarLogEvents) {
+        const noteEvent = noteLogEvents.find(
+          (ne) =>
+            this.calendarService.getCalendarIdByName(ne.calendarName) === calendarEvent.calendarId &&
+            this.eventsMatchByTime(ne, calendarEvent, dateStr)
+        );
+
+        if (!noteEvent) {
+          await this.calendarService.deleteEvent(calendarEvent.calendarId, calendarEvent.id);
+          deleted++;
+        }
+      }
+
+      new Notice(`Pushed: ${created} created, ${updated} updated, ${deleted} deleted`);
     } catch (error) {
       console.error("Failed to push to calendar:", error);
       new Notice(`Failed to sync: ${error.message}`);
@@ -191,9 +206,10 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
     calendarEvents: CalendarEvent[],
     calendarId: string,
     dateStr: string
-  ): Promise<{ created: number; updated: number }> {
+  ): Promise<{ created: number; updated: number; deleted: number }> {
     let created = 0;
     let updated = 0;
+    let deleted = 0;
 
     for (const noteEvent of noteEvents) {
       const existingEvent = calendarEvents.find((ce) =>
@@ -209,7 +225,18 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       }
     }
 
-    return { created, updated };
+    for (const calendarEvent of calendarEvents) {
+      const noteEvent = noteEvents.find((ne) =>
+        this.eventsMatchByTime(ne, calendarEvent, dateStr)
+      );
+
+      if (!noteEvent) {
+        await this.calendarService.deleteEvent(calendarEvent.calendarId, calendarEvent.id);
+        deleted++;
+      }
+    }
+
+    return { created, updated, deleted };
   }
 
   private eventsMatchByTime(
