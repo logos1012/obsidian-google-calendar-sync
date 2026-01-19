@@ -11,14 +11,17 @@ export function formatTime(date: Date): string {
   });
 }
 
-export function formatEventToLine(event: CalendarEvent): string {
+export function formatEventToLine(event: CalendarEvent, includeCalendarName: boolean = true): string {
   const startTime = formatTime(event.start);
   const endTime = formatTime(event.end);
-  return `- ${startTime} - ${endTime} ${event.summary} [${event.calendarName}]`;
+  if (includeCalendarName) {
+    return `- ${startTime} - ${endTime} ${event.summary} [${event.calendarName}]`;
+  }
+  return `- ${startTime} - ${endTime} ${event.summary}`;
 }
 
-export function formatEventWithDescription(event: CalendarEvent): string[] {
-  const lines: string[] = [formatEventToLine(event)];
+export function formatEventWithDescription(event: CalendarEvent, includeCalendarName: boolean = true): string[] {
+  const lines: string[] = [formatEventToLine(event, includeCalendarName)];
 
   if (event.description) {
     const descriptionLines = event.description.split("\n").filter((line) => line.trim());
@@ -30,14 +33,14 @@ export function formatEventWithDescription(event: CalendarEvent): string[] {
   return lines;
 }
 
-export function formatEventsToMarkdown(events: CalendarEvent[], includeDescription: boolean): string {
+export function formatEventsToMarkdown(events: CalendarEvent[], includeDescription: boolean, includeCalendarName: boolean = true): string {
   const lines: string[] = [];
 
   for (const event of events) {
     if (includeDescription) {
-      lines.push(...formatEventWithDescription(event));
+      lines.push(...formatEventWithDescription(event, includeCalendarName));
     } else {
-      lines.push(formatEventToLine(event));
+      lines.push(formatEventToLine(event, includeCalendarName));
     }
   }
 

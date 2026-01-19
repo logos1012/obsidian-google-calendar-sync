@@ -94,10 +94,10 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
 
       let content = await this.app.vault.read(file);
 
-      const planMarkdown = formatEventsToMarkdown(planEvents, false);
+      const planMarkdown = formatEventsToMarkdown(planEvents, false, false);
       content = updateSection(content, "Daily Plan", planMarkdown);
 
-      const logMarkdown = formatEventsToMarkdown(logEvents, true);
+      const logMarkdown = formatEventsToMarkdown(logEvents, true, true);
       content = updateSection(content, "Daily Log", logMarkdown);
 
       await this.app.vault.modify(file, content);
