@@ -1,6 +1,6 @@
 {
   "name": "obsidian-google-calendar-sync",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Sync Google Calendar with Obsidian daily notes",
   "main": "main.js",
   "scripts": {
