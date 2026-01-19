@@ -130,20 +130,23 @@ export function updateSection(
 
   let inSection = false;
   let sectionFound = false;
-  let sectionHeaderIndex = -1;
+  let contentInserted = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
 
     if (line.startsWith("## ")) {
-      if (inSection) {
-        inSection = false;
+      if (inSection && !contentInserted) {
+        result.push(newContent);
+        result.push("");
+        contentInserted = true;
       }
+      inSection = false;
 
       if (line.includes(sectionHeader)) {
         inSection = true;
         sectionFound = true;
-        sectionHeaderIndex = result.length;
+        contentInserted = false;
         result.push(line);
         continue;
       }
@@ -156,15 +159,18 @@ export function updateSection(
       if (line.trim() === "") {
         continue;
       }
+      if (!contentInserted) {
+        result.push(newContent);
+        result.push("");
+        contentInserted = true;
+      }
       inSection = false;
-      result.push(newContent);
-      result.push("");
     }
 
     result.push(line);
   }
 
-  if (inSection) {
+  if (inSection && !contentInserted) {
     result.push(newContent);
   }
 
