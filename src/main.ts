@@ -146,12 +146,14 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       let created = 0;
       let updated = 0;
 
-      created += await this.syncEventsToCalendar(
+      const planResult = await this.syncEventsToCalendar(
         notePlanEvents,
         calendarPlanEvents,
         this.settings.planCalendarId,
         dateStr
       );
+      created += planResult.created;
+      updated += planResult.updated;
 
       for (const noteEvent of noteLogEvents) {
         const calendarId = this.calendarService.getCalendarIdByName(
@@ -165,12 +167,15 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
         const existingEvent = calendarLogEvents.find(
           (ce) =>
             ce.calendarId === calendarId &&
-            this.eventsMatch(noteEvent, ce, dateStr)
+            this.eventsMatchByTime(noteEvent, ce, dateStr)
         );
 
         if (!existingEvent) {
           await this.createEventFromParsed(noteEvent, calendarId, dateStr);
           created++;
+        } else if (this.needsUpdate(noteEvent, existingEvent)) {
+          await this.updateEventFromParsed(noteEvent, existingEvent, dateStr);
+          updated++;
         }
       }
 
@@ -186,24 +191,28 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
     calendarEvents: CalendarEvent[],
     calendarId: string,
     dateStr: string
-  ): Promise<number> {
+  ): Promise<{ created: number; updated: number }> {
     let created = 0;
+    let updated = 0;
 
     for (const noteEvent of noteEvents) {
       const existingEvent = calendarEvents.find((ce) =>
-        this.eventsMatch(noteEvent, ce, dateStr)
+        this.eventsMatchByTime(noteEvent, ce, dateStr)
       );
 
       if (!existingEvent) {
         await this.createEventFromParsed(noteEvent, calendarId, dateStr);
         created++;
+      } else if (this.needsUpdate(noteEvent, existingEvent)) {
+        await this.updateEventFromParsed(noteEvent, existingEvent, dateStr);
+        updated++;
       }
     }
 
-    return created;
+    return { created, updated };
   }
 
-  private eventsMatch(
+  private eventsMatchByTime(
     noteEvent: ParsedEvent,
     calendarEvent: CalendarEvent,
     dateStr: string
@@ -215,10 +224,22 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       Math.abs(noteStart.getTime() - calendarEvent.start.getTime()) < 60000;
     const endMatch =
       Math.abs(noteEnd.getTime() - calendarEvent.end.getTime()) < 60000;
-    const titleMatch =
-      noteEvent.title.toLowerCase() === calendarEvent.summary.toLowerCase();
 
-    return startMatch && endMatch && titleMatch;
+    return startMatch && endMatch;
+  }
+
+  private needsUpdate(
+    noteEvent: ParsedEvent,
+    calendarEvent: CalendarEvent
+  ): boolean {
+    const titleChanged =
+      noteEvent.title.toLowerCase() !== calendarEvent.summary.toLowerCase();
+
+    const noteDescription = noteEvent.description?.join("\n") || "";
+    const calendarDescription = calendarEvent.description || "";
+    const descriptionChanged = noteDescription !== calendarDescription;
+
+    return titleChanged || descriptionChanged;
   }
 
   private async createEventFromParsed(
@@ -233,6 +254,25 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
     await this.calendarService.createEvent(
       calendarId,
       event.title,
+      start,
+      end,
+      description
+    );
+  }
+
+  private async updateEventFromParsed(
+    noteEvent: ParsedEvent,
+    calendarEvent: CalendarEvent,
+    dateStr: string
+  ): Promise<void> {
+    const start = parseTimeToDate(dateStr, noteEvent.startTime);
+    const end = parseTimeToDate(dateStr, noteEvent.endTime);
+    const description = noteEvent.description?.join("\n");
+
+    await this.calendarService.updateEvent(
+      calendarEvent.calendarId,
+      calendarEvent.id,
+      noteEvent.title,
       start,
       end,
       description
