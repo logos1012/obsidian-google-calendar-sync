@@ -1,10 +1,10 @@
 {
-  "id": "google-calendar-sync",
-  "name": "Google Calendar Sync",
-  "version": "1.0.0",
-  "minAppVersion": "0.15.0",
-  "description": "Sync Google Calendar events with Obsidian daily notes (Daily Plan & Daily Log)",
-  "author": "jake",
-  "authorUrl": "https://github.com/jake",
-  "isDesktopOnly": true
+	"id": "google-calendar-sync",
+	"name": "Google Calendar Sync",
+	"version": "1.0.1",
+	"minAppVersion": "0.15.0",
+	"description": "Sync Google Calendar events with Obsidian daily notes (Daily Plan & Daily Log)",
+	"author": "jake",
+	"authorUrl": "https://github.com/jake",
+	"isDesktopOnly": true
 }
