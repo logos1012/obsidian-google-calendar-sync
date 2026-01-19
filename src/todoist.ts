@@ -71,9 +71,9 @@ export class TodoistService {
         },
       });
 
-      const data = response.json as { items: Array<{ id: string; content: string; due?: { date: string } }> };
+      const data = response.json as { items: Array<{ task_id: string; content: string; due?: { date: string } }> };
       return (data.items || []).map((t) => ({
-        id: t.id,
+        id: t.task_id,
         content: t.content,
         isCompleted: true,
         due: t.due,
@@ -107,11 +107,23 @@ export class TodoistService {
   }
 
   async closeTask(taskId: string): Promise<void> {
-    await this.request("POST", `/tasks/${taskId}/close`);
+    try {
+      await this.request("POST", `/tasks/${taskId}/close`);
+    } catch (e) {
+      if (!(e instanceof Error && e.message.includes("404"))) {
+        throw e;
+      }
+    }
   }
 
   async reopenTask(taskId: string): Promise<void> {
-    await this.request("POST", `/tasks/${taskId}/reopen`);
+    try {
+      await this.request("POST", `/tasks/${taskId}/reopen`);
+    } catch (e) {
+      if (!(e instanceof Error && e.message.includes("404"))) {
+        throw e;
+      }
+    }
   }
 
   async updateTask(
