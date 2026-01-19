@@ -1,0 +1,195 @@
+import type { CalendarEvent, ParsedEvent } from "./types";
+
+const TIME_PATTERN = /^- (\d{1,2}:\d{2}) - (\d{1,2}:\d{2}) (.+?) \[(.+?)\]$/;
+const DESCRIPTION_PATTERN = /^\t- (.+)$/;
+
+export function formatTime(date: Date): string {
+  return date.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
+export function formatEventToLine(event: CalendarEvent): string {
+  const startTime = formatTime(event.start);
+  const endTime = formatTime(event.end);
+  return `- ${startTime} - ${endTime} ${event.summary} [${event.calendarName}]`;
+}
+
+export function formatEventWithDescription(event: CalendarEvent): string[] {
+  const lines: string[] = [formatEventToLine(event)];
+
+  if (event.description) {
+    const descriptionLines = event.description.split("\n").filter((line) => line.trim());
+    for (const descLine of descriptionLines) {
+      lines.push(`\t- ${descLine}`);
+    }
+  }
+
+  return lines;
+}
+
+export function formatEventsToMarkdown(events: CalendarEvent[], includeDescription: boolean): string {
+  const lines: string[] = [];
+
+  for (const event of events) {
+    if (includeDescription) {
+      lines.push(...formatEventWithDescription(event));
+    } else {
+      lines.push(formatEventToLine(event));
+    }
+  }
+
+  return lines.join("\n");
+}
+
+export function parseEventLine(line: string, nextLines: string[]): ParsedEvent | null {
+  const match = line.match(TIME_PATTERN);
+  if (!match) return null;
+
+  const [, startTime, endTime, title, calendarName] = match;
+  const description: string[] = [];
+
+  for (const nextLine of nextLines) {
+    const descMatch = nextLine.match(DESCRIPTION_PATTERN);
+    if (descMatch) {
+      description.push(descMatch[1]);
+    } else {
+      break;
+    }
+  }
+
+  return {
+    startTime,
+    endTime,
+    title,
+    calendarName,
+    description: description.length > 0 ? description : undefined,
+    rawLine: line,
+  };
+}
+
+export function parseSection(content: string, sectionHeader: string): ParsedEvent[] {
+  const lines = content.split("\n");
+  const events: ParsedEvent[] = [];
+
+  let inSection = false;
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (line.startsWith("## ")) {
+      inSection = line.includes(sectionHeader);
+      i++;
+      continue;
+    }
+
+    if (inSection && line.startsWith("- ")) {
+      const remainingLines = lines.slice(i + 1);
+      const descriptionLines: string[] = [];
+
+      for (const nextLine of remainingLines) {
+        if (nextLine.match(DESCRIPTION_PATTERN)) {
+          descriptionLines.push(nextLine);
+        } else {
+          break;
+        }
+      }
+
+      const event = parseEventLine(line, descriptionLines);
+      if (event) {
+        events.push(event);
+        i += 1 + (event.description?.length || 0);
+        continue;
+      }
+    }
+
+    i++;
+  }
+
+  return events;
+}
+
+export function parseDailyPlan(content: string): ParsedEvent[] {
+  return parseSection(content, "Daily Plan");
+}
+
+export function parseDailyLog(content: string): ParsedEvent[] {
+  return parseSection(content, "Daily Log");
+}
+
+export function updateSection(
+  content: string,
+  sectionHeader: string,
+  newContent: string
+): string {
+  const lines = content.split("\n");
+  const result: string[] = [];
+
+  let inSection = false;
+  let sectionFound = false;
+  let sectionHeaderIndex = -1;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.startsWith("## ")) {
+      if (inSection) {
+        inSection = false;
+      }
+
+      if (line.includes(sectionHeader)) {
+        inSection = true;
+        sectionFound = true;
+        sectionHeaderIndex = result.length;
+        result.push(line);
+        continue;
+      }
+    }
+
+    if (inSection) {
+      if (line.startsWith("- ") || line.match(DESCRIPTION_PATTERN)) {
+        continue;
+      }
+      if (line.trim() === "") {
+        continue;
+      }
+      inSection = false;
+      result.push(newContent);
+      result.push("");
+    }
+
+    result.push(line);
+  }
+
+  if (inSection) {
+    result.push(newContent);
+  }
+
+  if (!sectionFound) {
+    result.push("");
+    result.push(`## ${sectionHeader}`);
+    result.push(newContent);
+  }
+
+  return result.join("\n");
+}
+
+export function parseTimeToDate(dateStr: string, timeStr: string): Date {
+  const [year, month, day] = dateStr.split("-").map(Number);
+  const [hours, minutes] = timeStr.split(":").map(Number);
+  return new Date(year, month - 1, day, hours, minutes);
+}
+
+export function extractDateFromTitle(title: string): string | null {
+  const match = title.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : null;
+}
+
+export function compareEventsByTime(a: ParsedEvent, b: ParsedEvent): number {
+  const aTime = a.startTime.split(":").map(Number);
+  const bTime = b.startTime.split(":").map(Number);
+  return aTime[0] * 60 + aTime[1] - (bTime[0] * 60 + bTime[1]);
+}
