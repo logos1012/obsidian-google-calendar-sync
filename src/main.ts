@@ -205,12 +205,12 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
         }
       }
 
-      let tasksResult = { created: 0, updated: 0 };
+      let tasksResult = { created: 0, updated: 0, deleted: 0 };
       if (this.settings.todoistApiKey) {
         tasksResult = await this.syncTodosToTodoist(content, dateStr);
       }
 
-      new Notice(`Pushed: ${created} created, ${updated} updated, ${deleted} deleted, ${tasksResult.created} tasks created, ${tasksResult.updated} tasks updated`);
+      new Notice(`Pushed: ${created} created, ${updated} updated, ${deleted} deleted, ${tasksResult.created} tasks created, ${tasksResult.updated} tasks updated, ${tasksResult.deleted} tasks deleted`);
     } catch (error) {
       console.error("Failed to push to calendar:", error);
       new Notice(`Failed to sync: ${error.message}`);
@@ -355,7 +355,7 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
   private async syncTodosToTodoist(
     content: string,
     dateStr: string
-  ): Promise<{ created: number; updated: number }> {
+  ): Promise<{ created: number; updated: number; deleted: number }> {
     const eventsWithTodos = parseDailyPlanWithTodos(content);
     const allTodos = eventsWithTodos.flatMap((ewt) =>
       ewt.todos.map((todo) => ({
@@ -365,16 +365,13 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       }))
     );
 
-    if (allTodos.length === 0) {
-      return { created: 0, updated: 0 };
-    }
-
     const [year, month, day] = dateStr.split("-").map(Number);
     const date = new Date(year, month - 1, day);
     const remoteTasks = await this.todoistService.getTasksForDate(date);
 
     let created = 0;
     let updated = 0;
+    let deleted = 0;
 
     for (const todo of allTodos) {
       const existingTask = remoteTasks.find((t) => t.content === todo.title);
@@ -406,6 +403,14 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       }
     }
 
-    return { created, updated };
+    const noteTitles = new Set(allTodos.map((t) => t.title));
+    for (const remoteTask of remoteTasks) {
+      if (!noteTitles.has(remoteTask.content) && !remoteTask.isCompleted) {
+        await this.todoistService.deleteTask(remoteTask.id);
+        deleted++;
+      }
+    }
+
+    return { created, updated, deleted };
   }
 }
