@@ -7,7 +7,7 @@ import {
 } from "./types";
 import { GoogleCalendarSyncSettingTab } from "./settings";
 import { GoogleCalendarService } from "./google-calendar";
-import { GoogleTasksService } from "./google-tasks";
+import { TodoistService } from "./todoist";
 import {
   formatEventsToMarkdown,
   parseDailyPlan,
@@ -23,12 +23,12 @@ import {
 export default class GoogleCalendarSyncPlugin extends Plugin {
   settings: GoogleCalendarSyncSettings;
   calendarService: GoogleCalendarService;
-  tasksService: GoogleTasksService;
+  todoistService: TodoistService;
 
   async onload() {
     await this.loadSettings();
     this.calendarService = new GoogleCalendarService(this.settings);
-    this.tasksService = new GoogleTasksService(this.settings);
+    this.todoistService = new TodoistService(this.settings.todoistApiKey);
 
     this.addRibbonIcon("calendar", "Calendar to Obsidian", async () => {
       await this.pullFromCalendar();
@@ -55,7 +55,6 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
 
   onunload() {
     this.calendarService?.clearCache();
-    this.tasksService?.clearCache();
   }
 
   async loadSettings() {
@@ -65,7 +64,7 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
     this.calendarService = new GoogleCalendarService(this.settings);
-    this.tasksService = new GoogleTasksService(this.settings);
+    this.todoistService = new TodoistService(this.settings.todoistApiKey);
   }
 
   private getActiveFile(): TFile | null {
@@ -109,7 +108,10 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
 
       await this.app.vault.modify(file, content);
 
-      const tasksResult = await this.syncTaskCompletionToNote(file, date);
+      let tasksResult = { updated: 0, added: 0 };
+      if (this.settings.todoistApiKey) {
+        tasksResult = await this.syncTodoistToNote(file, date);
+      }
 
       new Notice(
         `Synced ${planEvents.length} plan events, ${logEvents.length} log events, ${tasksResult.updated} tasks updated, ${tasksResult.added} tasks added`
@@ -203,7 +205,10 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
         }
       }
 
-      const tasksResult = await this.syncTodosToTasks(content, dateStr);
+      let tasksResult = { created: 0, updated: 0 };
+      if (this.settings.todoistApiKey) {
+        tasksResult = await this.syncTodosToTodoist(content, dateStr);
+      }
 
       new Notice(`Pushed: ${created} created, ${updated} updated, ${deleted} deleted, ${tasksResult.created} tasks created, ${tasksResult.updated} tasks updated`);
     } catch (error) {
@@ -317,7 +322,7 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
     );
   }
 
-  private async syncTaskCompletionToNote(
+  private async syncTodoistToNote(
     file: TFile,
     date: Date
   ): Promise<{ updated: number; added: number }> {
@@ -325,25 +330,24 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
     const eventsWithTodos = parseDailyPlanWithTodos(content);
     const allTodos = eventsWithTodos.flatMap((ewt) => ewt.todos);
 
-    await this.tasksService.initialize();
-    const remoteTasks = await this.tasksService.getTasksForDate(date);
+    const remoteTasks = await this.todoistService.getTasksForDate(date);
 
     let updated = 0;
     for (const todo of allTodos) {
-      const remoteTask = remoteTasks.find((t) => t.title === todo.title);
-      if (remoteTask && remoteTask.completed !== todo.completed) {
-        content = updateTodoInContent(content, todo.title, remoteTask.completed);
+      const remoteTask = remoteTasks.find((t) => t.content === todo.title);
+      if (remoteTask && remoteTask.isCompleted !== todo.completed) {
+        content = updateTodoInContent(content, todo.title, remoteTask.isCompleted);
         updated++;
       }
     }
 
     const existingTitles = new Set(allTodos.map((t) => t.title));
-    const newTasks = remoteTasks.filter((t) => !existingTitles.has(t.title));
+    const newTasks = remoteTasks.filter((t) => !existingTitles.has(t.content));
 
     if (newTasks.length > 0) {
       const unassignedLines = newTasks.map((task) => {
-        const checkbox = task.completed ? "[x]" : "[ ]";
-        return `\t- ${checkbox} ${task.title}`;
+        const checkbox = task.isCompleted ? "[x]" : "[ ]";
+        return `\t- ${checkbox} ${task.content}`;
       });
 
       const unassignedSection = `- Unassigned Tasks\n${unassignedLines.join("\n")}`;
@@ -386,7 +390,7 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
     return result.join("\n");
   }
 
-  private async syncTodosToTasks(
+  private async syncTodosToTodoist(
     content: string,
     dateStr: string
   ): Promise<{ created: number; updated: number }> {
@@ -394,8 +398,8 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
     const allTodos = eventsWithTodos.flatMap((ewt) =>
       ewt.todos.map((todo) => ({
         ...todo,
-        dueDate: parseTimeToDate(dateStr, ewt.event.endTime),
         startTime: ewt.event.startTime,
+        endTime: ewt.event.endTime,
       }))
     );
 
@@ -403,33 +407,37 @@ export default class GoogleCalendarSyncPlugin extends Plugin {
       return { created: 0, updated: 0 };
     }
 
-    await this.tasksService.initialize();
     const [year, month, day] = dateStr.split("-").map(Number);
     const date = new Date(year, month - 1, day);
+    const remoteTasks = await this.todoistService.getTasksForDate(date);
 
     let created = 0;
     let updated = 0;
 
     for (const todo of allTodos) {
-      const existingTask = await this.tasksService.findTaskByTitle(todo.title, date);
+      const existingTask = remoteTasks.find((t) => t.content === todo.title);
 
       if (existingTask) {
-        if (existingTask.completed !== todo.completed) {
-          await this.tasksService.updateTask(
-            existingTask.id,
-            todo.title,
-            todo.completed,
-            todo.dueDate,
-            todo.startTime
-          );
+        if (existingTask.isCompleted !== todo.completed) {
+          if (todo.completed) {
+            await this.todoistService.closeTask(existingTask.id);
+          } else {
+            await this.todoistService.reopenTask(existingTask.id);
+          }
           updated++;
         }
       } else {
-        await this.tasksService.createTask(todo.title, todo.dueDate, todo.startTime);
+        await this.todoistService.createTask(
+          todo.title,
+          dateStr,
+          todo.startTime,
+          todo.endTime
+        );
         if (todo.completed) {
-          const newTask = await this.tasksService.findTaskByTitle(todo.title, date);
+          const newTasks = await this.todoistService.getTasksForDate(date);
+          const newTask = newTasks.find((t) => t.content === todo.title);
           if (newTask) {
-            await this.tasksService.updateTask(newTask.id, todo.title, true, todo.dueDate, todo.startTime);
+            await this.todoistService.closeTask(newTask.id);
           }
         }
         created++;

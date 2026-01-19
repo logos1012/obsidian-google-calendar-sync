@@ -98,5 +98,21 @@ export class GoogleCalendarSyncSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
+
+    containerEl.createEl("h3", { text: "Todoist" });
+
+    new Setting(containerEl)
+      .setName("Todoist API Key")
+      .setDesc("API token from Todoist Settings > Integrations > Developer")
+      .addText((text) => {
+        text
+          .setPlaceholder("Your Todoist API token")
+          .setValue(this.plugin.settings.todoistApiKey)
+          .onChange(async (value) => {
+            this.plugin.settings.todoistApiKey = value;
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.type = "password";
+      });
   }
 }

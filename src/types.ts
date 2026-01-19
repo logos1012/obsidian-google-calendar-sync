@@ -1,11 +1,11 @@
-// Plugin Settings
 export interface GoogleCalendarSyncSettings {
   awsAccessKeyId: string;
   awsSecretAccessKey: string;
   awsRegion: string;
   awsSecretName: string;
   impersonateEmail: string;
-  planCalendarId: string; // '계획' 캘린더 ID
+  planCalendarId: string;
+  todoistApiKey: string;
 }
 
 export const DEFAULT_SETTINGS: GoogleCalendarSyncSettings = {
@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS: GoogleCalendarSyncSettings = {
   awsSecretName: "/gcp/google-drive-service-account",
   impersonateEmail: "jake@workbetterlife.com",
   planCalendarId: "c_92ce73b3a68e4071b369ddcbc9f649ca53c9846cedf4d36522d2e9969250d800@group.calendar.google.com",
+  todoistApiKey: "",
 };
 
 // Google Service Account Key structure
@@ -66,18 +67,22 @@ export interface SyncResult {
   eventsProcessed: number;
 }
 
-// Task item from Google Tasks API
-export interface TaskItem {
+export interface TodoistTask {
   id: string;
-  title: string;
-  completed: boolean;
-  due?: Date;
-  notes?: string;
+  content: string;
+  isCompleted: boolean;
+  due?: {
+    date: string;
+    datetime?: string;
+  };
+  duration?: {
+    amount: number;
+    unit: string;
+  };
 }
 
-// Parsed todo from Obsidian note
 export interface ParsedTodo {
   title: string;
   completed: boolean;
-  parentEventTime?: string; // "10:00 - 12:00" - 상위 이벤트의 시간
+  parentEventTime?: string;
 }
